@@ -184,6 +184,9 @@ static uint8_t _auth_method_two_arm_check()
 
 uint8_t arm_auth_check()
 {
+	// Expire zero-second authorizations before checking a later arm request.
+	arm_auth_update(hrt_absolute_time(), false);
+
 	if (_param_com_arm_auth_method < ARM_AUTH_METHOD_LAST) {
 		return arm_check_method[_param_com_arm_auth_method]();
 	}
@@ -204,7 +207,7 @@ void arm_auth_update(hrt_abstime now, bool param_update)
 		break;
 
 	case ARM_AUTH_MISSION_APPROVED:
-		if (now > auth_timeout) {
+		if (now >= auth_timeout) {
 			state = ARM_AUTH_IDLE;
 		}
 

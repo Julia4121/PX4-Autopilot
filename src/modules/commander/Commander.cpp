@@ -552,11 +552,19 @@ transition_result_t Commander::arm(arm_disarm_reason_t calling_reason, bool run_
 		return TRANSITION_DENIED;
 	}
 
-	// allow a grace period for re-arming: preflight checks don't need to pass during that time, for example for accidental in-air disarming
-	if (calling_reason == arm_disarm_reason_t::rc_switch
+	// Keep the rapid re-arm grace period for ordinary preflight checks, but still
+	// require arm authorization for every RC switch arm attempt.
+	if (run_preflight_checks && calling_reason == arm_disarm_reason_t::rc_switch
 	    && ((_last_disarmed_timestamp != 0) && (hrt_elapsed_time(&_last_disarmed_timestamp) < 5_s))) {
 
 		run_preflight_checks = false;
+
+		if (_param_com_arm_auth_req.get() != 0
+		    && arm_auth_check() != vehicle_command_ack_s::VEHICLE_CMD_RESULT_ACCEPTED) {
+			mavlink_log_critical(&_mavlink_log_pub, "Arming denied: authorization required\t");
+			tune_negative(true);
+			return TRANSITION_DENIED;
+		}
 	}
 
 	if (run_preflight_checks) {

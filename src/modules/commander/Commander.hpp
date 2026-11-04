@@ -328,6 +328,7 @@ private:
 	param_t _param_rc_map_fltmode{PARAM_INVALID};
 
 	DEFINE_PARAMETERS(
+		(ParamInt<px4::params::COM_ARM_AUTH_REQ>) _param_com_arm_auth_req,
 		(ParamFloat<px4::params::COM_DISARM_LAND>)  _param_com_disarm_land,
 		(ParamFloat<px4::params::COM_DISARM_PRFLT>) _param_com_disarm_prflt,
 		(ParamBool<px4::params::COM_DISARM_MAN>)    _param_com_disarm_man,
