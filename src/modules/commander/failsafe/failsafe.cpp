@@ -97,14 +97,11 @@ FailsafeBase::ActionOptions Failsafe::fromGfActParam(int param_value)
 		break;
 
 	case geofence_violation_action::Hold_mode:
-		options.allow_user_takeover = UserTakeoverAllowed::AlwaysModeSwitchOnly; // ensure the user can escape again
 		options.action = Action::Hold;
-		options.clear_condition = ClearCondition::OnModeChangeOrDisarm;
 		break;
 
 	case geofence_violation_action::Return_mode:
 		options.action = Action::RTL;
-		options.clear_condition = ClearCondition::OnModeChangeOrDisarm;
 		break;
 
 	case geofence_violation_action::Terminate:
@@ -115,12 +112,18 @@ FailsafeBase::ActionOptions Failsafe::fromGfActParam(int param_value)
 
 	case geofence_violation_action::Land_mode:
 		options.action = Action::Land;
-		options.clear_condition = ClearCondition::OnModeChangeOrDisarm;
 		break;
 
 	default:
 		options.action = Action::Warn;
 		break;
+	}
+
+	// Keep the selected fence response active until disarm, even after a mode
+	// switch request, stick movement, or a brief return inside the fence.
+	if (options.action == Action::Hold || options.action == Action::RTL || options.action == Action::Land) {
+		options.allow_user_takeover = UserTakeoverAllowed::Never;
+		options.clear_condition = ClearCondition::OnDisarm;
 	}
 
 	return options;

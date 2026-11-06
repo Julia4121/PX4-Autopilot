@@ -603,6 +603,12 @@ void FailsafeBase::getSelectedAction(const State &state, const failsafe_flags_s 
 		break;
 	}
 
+	// An action that forbids takeover must remain in charge even if the pilot
+	// selects another automatic mode such as Land or Precision Land.
+	if (allow_user_takeover == UserTakeoverAllowed::Never) {
+		return;
+	}
+
 	// UX improvement (this is optional for safety): change failsafe to a warning in certain situations.
 	// If already landing, do not go into RTL
 	if (returned_state.updated_user_intended_mode == vehicle_status_s::NAVIGATION_STATE_AUTO_LAND) {

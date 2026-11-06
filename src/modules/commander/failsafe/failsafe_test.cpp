@@ -33,6 +33,7 @@
 
 #include <gtest/gtest.h>
 
+#include "failsafe.h"
 #include "framework.h"
 #include <uORB/topics/vehicle_status.h>
 
@@ -90,6 +91,109 @@ public:
 	}
 
 };
+
+
+TEST_F(FailsafeTest, geofence_action_choice_rejects_takeover_until_disarm)
+{
+	struct GeofenceCase {
+		int32_t parameter;
+		FailsafeBase::Action expected;
+	};
+	const GeofenceCase cases[] = {
+		{2, FailsafeBase::Action::Hold},
+		{3, FailsafeBase::Action::RTL},
+		{5, FailsafeBase::Action::Land},
+	};
+	param_t gf_action_param = param_handle(px4::params::GF_ACTION);
+
+	for (const GeofenceCase &test_case : cases) {
+		SCOPED_TRACE(test_case.parameter);
+		param_set(gf_action_param, &test_case.parameter);
+		Failsafe failsafe(nullptr);
+		failsafe_flags_s flags{};
+		FailsafeBase::State state{};
+		state.armed = true;
+		state.user_intended_mode = vehicle_status_s::NAVIGATION_STATE_POSCTL;
+		state.vehicle_type = vehicle_status_s::VEHICLE_TYPE_ROTARY_WING;
+		hrt_abstime time = 5_s;
+		failsafe.update(time, state, false, false, flags);
+
+		flags.geofence_breached = true;
+		time += 10_ms;
+		failsafe.update(time, state, false, false, flags);
+		EXPECT_EQ(failsafe.selectedAction(), test_case.expected);
+
+		// Stick movement and mode selection cannot cancel the fence response.
+		time += 10_ms;
+		failsafe.update(time, state, false, true, flags);
+		EXPECT_EQ(failsafe.selectedAction(), test_case.expected);
+		EXPECT_FALSE(failsafe.userTakeoverActive());
+		state.user_intended_mode = vehicle_status_s::NAVIGATION_STATE_ALTCTL;
+		time += 10_ms;
+		failsafe.update(time, state, true, false, flags);
+		EXPECT_EQ(failsafe.selectedAction(), test_case.expected);
+		EXPECT_FALSE(failsafe.userTakeoverActive());
+		for (uint8_t requested_mode : {
+		     vehicle_status_s::NAVIGATION_STATE_AUTO_RTL,
+		     vehicle_status_s::NAVIGATION_STATE_AUTO_LAND,
+		     vehicle_status_s::NAVIGATION_STATE_AUTO_PRECLAND
+		}) {
+			state.user_intended_mode = requested_mode;
+			time += 10_ms;
+			failsafe.update(time, state, true, false, flags);
+			EXPECT_EQ(failsafe.selectedAction(), test_case.expected);
+		}
+
+		// The response remains active after a temporary return inside the fence.
+		flags.geofence_breached = false;
+		state.user_intended_mode = vehicle_status_s::NAVIGATION_STATE_STAB;
+		time += 10_ms;
+		failsafe.update(time, state, true, false, flags);
+		EXPECT_EQ(failsafe.selectedAction(), test_case.expected);
+
+		state.armed = false;
+		time += 10_ms;
+		failsafe.update(time, state, false, false, flags);
+		EXPECT_EQ(failsafe.selectedAction(), FailsafeBase::Action::None);
+	}
+
+	int32_t default_action = 2;
+	param_set(gf_action_param, &default_action);
+}
+
+
+TEST_F(FailsafeTest, geofence_warning_and_termination_remain_selectable)
+{
+	param_t gf_action_param = param_handle(px4::params::GF_ACTION);
+	failsafe_flags_s flags{};
+	flags.geofence_breached = true;
+	FailsafeBase::State state{};
+	state.armed = true;
+	state.user_intended_mode = vehicle_status_s::NAVIGATION_STATE_POSCTL;
+	state.vehicle_type = vehicle_status_s::VEHICLE_TYPE_ROTARY_WING;
+
+	int32_t warning_action = 1;
+	param_set(gf_action_param, &warning_action);
+	Failsafe warning(nullptr);
+	warning.update(5_s, state, false, false, flags);
+	EXPECT_EQ(warning.selectedAction(), FailsafeBase::Action::Warn);
+	flags.geofence_breached = false;
+	warning.update(5_s + 10_ms, state, false, false, flags);
+	EXPECT_EQ(warning.selectedAction(), FailsafeBase::Action::None);
+
+	int32_t terminate_action = 4;
+	param_set(gf_action_param, &terminate_action);
+	Failsafe terminate(nullptr);
+	flags.geofence_breached = true;
+	terminate.update(5_s, state, false, false, flags);
+	EXPECT_EQ(terminate.selectedAction(), FailsafeBase::Action::Terminate);
+	state.user_intended_mode = vehicle_status_s::NAVIGATION_STATE_ALTCTL;
+	terminate.update(5_s + 10_ms, state, true, true, flags);
+	EXPECT_EQ(terminate.selectedAction(), FailsafeBase::Action::Terminate);
+
+	int32_t default_action = 2;
+	param_set(gf_action_param, &default_action);
+}
 
 
 TEST_F(FailsafeTest, general)
